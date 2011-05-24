@@ -42,11 +42,9 @@ exports['test delayed overlay loading'] = function(beforeExit) {
         image2.load(fs.readFileSync('test/fixture/2.png'));
     }, 100);
 
-    var image3 = img.fromBuffer(fs.readFileSync('test/fixture/3.png'));
-
     img.fromBuffer(fs.readFileSync('test/fixture/1.png'))
         .overlay(image2)
-        .overlay(image3)
+        .overlay(fs.readFileSync('test/fixture/3.png'))
         .asPNG({}, function(err, data) {
             completed = true;
             assert.ok(data.length >= 100000);
