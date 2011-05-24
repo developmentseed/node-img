@@ -18,9 +18,9 @@ exports['create empty image'] = function(beforeExit) {
         assert.equal(image.width, 256);
         assert.equal(image.height, 256);
         image.asPNG({}, function(err, data) {
-            if (err) throw new Error(err);
-            fs.writeFileSync('./out.png', data);
             completed = true;
+            if (err) throw err;
+            assert.equal(data.length, 9560);
         });
     });
 

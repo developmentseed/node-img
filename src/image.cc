@@ -238,6 +238,9 @@ void Image::writePNG(png_structp png_ptr, png_bytep data, png_size_t length) {
 
     // TODO: Reduce number of reallocs.
     baton->data = (char*)realloc(baton->data, baton->length + length);
+    // TODO: implement OOM check
+    assert(baton->data);
+
     memcpy(baton->data + baton->length, data, length);
     baton->length += length;
 }
@@ -279,7 +282,6 @@ int Image::EIO_AsPNG(eio_req *req) {
 
     png_write_end(png_ptr, NULL);
     png_destroy_write_struct(&png_ptr, &info_ptr);
-
 
     return 0;
 }
