@@ -19,10 +19,12 @@ void Image::Init(Handle<Object> target) {
     constructor_template->SetClassName(String::NewSymbol("Image"));
 
     NODE_SET_PROTOTYPE_METHOD(constructor_template, "load", Load);
+    NODE_SET_PROTOTYPE_METHOD(constructor_template, "asPNG", AsPNG);
 
     Local<ObjectTemplate> instance_template = constructor_template->InstanceTemplate();
     instance_template->SetAccessor(String::NewSymbol("width"), GetWidth);
     instance_template->SetAccessor(String::NewSymbol("height"), GetHeight);
+    instance_template->SetAccessor(String::NewSymbol("data"), GetData);
 
     target->Set(String::NewSymbol("Image"), constructor_template->GetFunction());
 }
@@ -58,6 +60,19 @@ Handle<Value> Image::GetHeight(Local<String> name, const AccessorInfo& info) {
     HandleScope scope;
     Image *image = ObjectWrap::Unwrap<Image>(info.This());
     return scope.Close(Number::New(image->height));
+}
+
+Handle<Value> Image::GetData(Local<String> name, const AccessorInfo& info) {
+    HandleScope scope;
+    Image *image = ObjectWrap::Unwrap<Image>(info.This());
+
+    if (image->data == NULL) {
+        return scope.Close(Undefined());
+    } else {
+        // Returns a copy of the buffer for now.
+        Buffer *buffer = Buffer::New(image->data, 4 * image->width * image->height);
+        return scope.Close(buffer->handle_);
+    }
 }
 
 //Image#load(buffer) decodes the PNG/JPEG buffer passed in and sets .data to the resulting RGBA buffer
@@ -196,3 +211,103 @@ int Image::EIO_AfterLoad(eio_req *req) {
     image->Process();
     return 0;
 }
+
+
+//Image#AsPNG(buffer) decodes the PNG/JPEG buffer passed in and sets .data to the resulting RGBA buffer
+// emits 'AsPNG' when done and calls the callback if provided.
+Handle<Value> Image::AsPNG(const Arguments& args) {
+    HandleScope scope;
+    Image* image = ObjectWrap::Unwrap<Image>(args.This());
+
+    // First argument is a hash with config options depth/color
+    OPTIONAL_ARGUMENT_FUNCTION(1, callback);
+
+    Baton* baton = new PNGBaton(image, callback);
+    image->Schedule(EIO_BeginAsPNG, baton);
+
+    return args.This();
+}
+
+void Image::EIO_BeginAsPNG(Baton* baton) {
+    baton->image->locked = true;
+    eio_custom(EIO_AsPNG, EIO_PRI_DEFAULT, EIO_AfterAsPNG, baton);
+}
+
+void Image::writePNG(png_structp png_ptr, png_bytep data, png_size_t length) {
+    PNGBaton* baton = static_cast<PNGBaton*>(png_get_io_ptr(png_ptr));
+
+    // TODO: Reduce number of reallocs.
+    baton->data = (char*)realloc(baton->data, baton->length + length);
+    memcpy(baton->data + baton->length, data, length);
+    baton->length += length;
+}
+
+int Image::EIO_AsPNG(eio_req *req) {
+    PNGBaton* baton = static_cast<PNGBaton*>(req->data);
+    Image* image = baton->image;
+
+    assert(image->data != NULL);
+
+    png_structp png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+    assert(png_ptr);
+    // if (!png_ptr) {
+    //     baton->error = 1;
+    //     return 0;
+    // }
+    png_infop info_ptr = png_create_info_struct(png_ptr);
+    assert(info_ptr);
+    // if (!info_ptr) {
+    //     png_destroy_writestruct(&png_ptr, NULL, NULL);
+    //     baton->error = 2;
+    //     return 0;
+    // }
+
+    png_set_IHDR(png_ptr, info_ptr, image->width, image->height, 8,
+                 PNG_COLOR_TYPE_RGB_ALPHA, PNG_INTERLACE_NONE,
+                 PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
+
+    png_set_write_fn(png_ptr, (png_voidp)baton, writePNG, NULL);
+    png_write_info(png_ptr, info_ptr);
+
+    png_bytep row_pointers[image->height];
+    for (unsigned i = 0; i < image->height; i++) {
+        row_pointers[i] = (unsigned char*)(image->data + (4 * image->width * i));
+    }
+
+    // Write image data
+    png_write_image(png_ptr, row_pointers);
+
+    png_write_end(png_ptr, NULL);
+    png_destroy_write_struct(&png_ptr, &info_ptr);
+
+
+    return 0;
+}
+
+int Image::EIO_AfterAsPNG(eio_req *req) {
+    HandleScope scope;
+    PNGBaton* baton = static_cast<PNGBaton*>(req->data);
+    Image* image = baton->image;
+
+    if (!baton->callback.IsEmpty() && baton->callback->IsFunction()) {
+        if (baton->data != NULL && baton->length > 0) {
+            Local<Value> argv[] = {
+                Local<Value>::New(Null()),
+                // TODO: Currently creates a copy of the data.
+                // TODO: Buffer::New returns a persistent handle. ->Ref() it?
+                Local<Value>::New(Buffer::New(baton->data, baton->length)->handle_)
+            };
+            TRY_CATCH_CALL(image->handle_, baton->callback, 2, argv);
+        } else {
+            // TODO: send proper error message.
+            Local<Value> argv[] = { Local<Value>::New(True()) };
+            TRY_CATCH_CALL(image->handle_, baton->callback, 1, argv);
+        }
+    }
+
+    delete baton;
+    image->locked = false;
+    image->Process();
+    return 0;
+}
+
