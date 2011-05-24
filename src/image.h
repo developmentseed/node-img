@@ -5,7 +5,9 @@
 #include <node.h>
 #include <node_events.h>
 #include <node_buffer.h>
+#include <png.h>
 
+#include <string>
 #include <queue>
 
 using namespace v8;
@@ -16,8 +18,10 @@ class Image : public ObjectWrap {
     public:
         Image* image;
         Persistent<Function> callback;
+        int error;
+        std::string message;
 
-        Baton(Image* img, Handle<Function> cb) : image(img) {
+        Baton(Image* img, Handle<Function> cb) : image(img), error(0) {
             ev_ref(EV_DEFAULT_UC);
             image->Ref();
             callback = Persistent<Function>::New(cb);
@@ -34,7 +38,9 @@ class Image : public ObjectWrap {
         Persistent<Object> buffer;
         size_t length;
         char* data;
-        BufferBaton(Image* img, Handle<Function> cb, Handle<Object> buf) : Baton(img, cb) {
+        int pos;
+
+        BufferBaton(Image* img, Handle<Function> cb, Handle<Object> buf) : Baton(img, cb), pos(0) {
             buffer = Persistent<Object>::New(buf);
             data = Buffer::Data(buf);
             length = Buffer::Length(buf);
@@ -62,7 +68,8 @@ protected:
         ObjectWrap(),
         locked(false),
         width(0),
-        height(0) {}
+        height(0),
+        data(NULL) {}
     static Handle<Value> New(const Arguments& args);
 
     static Handle<Value> GetWidth(Local<String> name, const AccessorInfo& info);
@@ -76,11 +83,14 @@ protected:
     static int EIO_Load(eio_req *req);
     static int EIO_AfterLoad(eio_req *req);
 
+    static void readPNG(png_structp png_ptr, png_bytep data, png_size_t length);
+
     bool locked;
     std::queue<Call*> queue;
 
-    int width;
-    int height;
+    unsigned long width;
+    unsigned long height;
+    char* data;
 };
 
 
