@@ -1,0 +1,22 @@
+{
+    "name": "img",
+    "description": "Loads images to RGBA buffers, composites, and outputs them.",
+    "version": "0.0.1",
+    "homepage": "http://github.com/developmentseed/node-img",
+    "author": "Konstantin Käfer <kkaefer@gmail.com>",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/developmentseed/node-img.git"
+    },
+    "engines": {
+        "node": ">=0.4.0"
+    },
+    "licenses": [{ "type": "BSD" }],
+    "main": "./lib",
+    "devDependencies": {
+        "express": "0.7.x"
+    },
+    "scripts": {
+        "test": "expresso"
+    }
+}
