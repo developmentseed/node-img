@@ -58,6 +58,17 @@ class Image : public ObjectWrap {
         PNGBaton(Image* img, Handle<Function> cb) : Baton(img, cb), length(0), data(NULL) {}
     };
 
+    class ImageBaton: public Baton {
+    public:
+        Image* overlay;
+        ImageBaton(Image* img, Handle<Function> cb, Image* ovl) : Baton(img, cb), overlay(ovl) {
+            overlay->Ref();
+        }
+        ~ImageBaton() {
+            overlay->Unref();
+        }
+    };
+
     typedef void (*EIO_Callback)(Baton* baton);
 
     struct Call {
@@ -85,6 +96,12 @@ protected:
     }
     static Handle<Value> New(const Arguments& args);
 
+    static inline bool HasInstance(Handle<Value> val) {
+        if (!val->IsObject()) return false;
+        Local<Object> obj = val->ToObject();
+        return constructor_template->HasInstance(obj);
+    }
+
     static Handle<Value> GetWidth(Local<String> name, const AccessorInfo& info);
     static Handle<Value> GetHeight(Local<String> name, const AccessorInfo& info);
     static Handle<Value> GetData(Local<String> name, const AccessorInfo& info);
@@ -104,6 +121,11 @@ protected:
     static void EIO_BeginAsPNG(Baton* baton);
     static int EIO_AsPNG(eio_req *req);
     static int EIO_AfterAsPNG(eio_req *req);
+
+    static Handle<Value> Overlay(const Arguments& args);
+    static void EIO_BeginOverlay(Baton* baton);
+    static int EIO_Overlay(eio_req *req);
+    static int EIO_AfterOverlay(eio_req *req);
 
     bool locked;
     std::queue<Call*> queue;

@@ -19,6 +19,7 @@ void Image::Init(Handle<Object> target) {
     constructor_template->SetClassName(String::NewSymbol("Image"));
 
     NODE_SET_PROTOTYPE_METHOD(constructor_template, "load", Load);
+    NODE_SET_PROTOTYPE_METHOD(constructor_template, "overlay", Overlay);
     NODE_SET_PROTOTYPE_METHOD(constructor_template, "asPNG", AsPNG);
 
     Local<ObjectTemplate> instance_template = constructor_template->InstanceTemplate();
@@ -202,8 +203,11 @@ int Image::EIO_AfterLoad(eio_req *req) {
     Image* image = baton->image;
 
     if (!baton->callback.IsEmpty() && baton->callback->IsFunction()) {
-        Local<Value> argv[] = { Local<Value>::New(Null()) };
-        TRY_CATCH_CALL(image->handle_, baton->callback, 1, argv);
+        Local<Value> argv[] = {
+            Local<Value>::New(Null()),
+            Local<Value>::New(image->handle_)
+        };
+        TRY_CATCH_CALL(image->handle_, baton->callback, 2, argv);
     }
 
     delete baton;
@@ -305,6 +309,97 @@ int Image::EIO_AfterAsPNG(eio_req *req) {
             Local<Value> argv[] = { Local<Value>::New(True()) };
             TRY_CATCH_CALL(image->handle_, baton->callback, 1, argv);
         }
+    }
+
+    delete baton;
+    image->locked = false;
+    image->Process();
+    return 0;
+}
+
+Handle<Value> Image::Overlay(const Arguments& args) {
+    HandleScope scope;
+    Image* image = ObjectWrap::Unwrap<Image>(args.This());
+
+    OPTIONAL_ARGUMENT_FUNCTION(1, callback);
+    // TODO: Allow arbitrary RGBA buffers to be passed in.
+    if (args.Length() < 1 || !Image::HasInstance(args[0])) {
+        return ThrowException(Exception::TypeError(
+            String::New("Image required as first argument")));
+    }
+
+    Image* overlay = ObjectWrap::Unwrap<Image>(args[0]->ToObject());
+    Baton* baton = new ImageBaton(image, callback, overlay);
+    image->Schedule(EIO_BeginOverlay, baton);
+
+    return args.This();
+}
+
+void Image::EIO_BeginOverlay(Baton* baton) {
+    baton->image->locked = true;
+    eio_custom(EIO_Overlay, EIO_PRI_DEFAULT, EIO_AfterOverlay, baton);
+}
+
+int Image::EIO_Overlay(eio_req *req) {
+    ImageBaton* baton = static_cast<ImageBaton*>(req->data);
+    Image* image = baton->image;
+
+    assert(image->data != NULL);
+    assert(baton->overlay->data != NULL);
+
+    // TODO: Need better checks for this.
+    assert(image->width == baton->overlay->width);
+    assert(image->height == baton->overlay->height);
+
+    for (unsigned long y = 0; y < image->height; y++) {
+        int offset = 4 * y * image->width;
+        unsigned int* src = (unsigned int*)(baton->overlay->data + offset);
+        unsigned int* dst = (unsigned int*)(image->data + offset);
+
+        for (unsigned long x = 0; x < image->width; x++) {
+             unsigned int rgba0 = dst[x];
+             unsigned int rgba1 = src[x];
+
+             // From http://trac.mapnik.org/browser/trunk/include/mapnik/graphics.hpp#L337
+             unsigned a1 = (rgba1 >> 24) & 0xff;
+             if (a1 == 0) continue;
+             if (a1 == 0xff) {
+                 dst[x] = rgba1;
+                 continue;
+             }
+             unsigned r1 = rgba1 & 0xff;
+             unsigned g1 = (rgba1 >> 8 ) & 0xff;
+             unsigned b1 = (rgba1 >> 16) & 0xff;
+
+             unsigned a0 = (rgba0 >> 24) & 0xff;
+             unsigned r0 = (rgba0 & 0xff) * a0;
+             unsigned g0 = ((rgba0 >> 8 ) & 0xff) * a0;
+             unsigned b0 = ((rgba0 >> 16) & 0xff) * a0;
+
+             a0 = ((a1 + a0) << 8) - a0*a1;
+
+             r0 = ((((r1 << 8) - r0) * a1 + (r0 << 8)) / a0);
+             g0 = ((((g1 << 8) - g0) * a1 + (g0 << 8)) / a0);
+             b0 = ((((b1 << 8) - b0) * a1 + (b0 << 8)) / a0);
+             a0 = a0 >> 8;
+             dst[x] = (a0 << 24)| (b0 << 16) | (g0 << 8) | (r0);
+        }
+    }
+
+    return 0;
+}
+
+int Image::EIO_AfterOverlay(eio_req *req) {
+    HandleScope scope;
+    ImageBaton* baton = static_cast<ImageBaton*>(req->data);
+    Image* image = baton->image;
+
+    if (!baton->callback.IsEmpty() && baton->callback->IsFunction()) {
+        Local<Value> argv[] = {
+            Local<Value>::New(Null()),
+            Local<Value>::New(image->handle_)
+        };
+        TRY_CATCH_CALL(image->handle_, baton->callback, 2, argv);
     }
 
     delete baton;

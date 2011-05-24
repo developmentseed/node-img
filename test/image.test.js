@@ -34,3 +34,18 @@ exports['try setting data'] = function(beforeExit) {
     image.data = 42;
     assert.equal(image.data, undefined);
 };
+
+exports['load image from file'] = function(beforeExit) {
+    img.fromFile('test/fixture/1.png', function(err, image1) {
+        if (err) throw err;
+        img.fromFile('test/fixture/2.png', function(err, image2) {
+            if (err) throw err;
+            image1.overlay(image2, function(err) {
+                image1.asPNG({}, function(err, data) {
+                    if (err) throw err;
+                    fs.writeFileSync('out.png', data);
+                })
+            });
+        });
+    });
+};
