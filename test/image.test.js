@@ -35,17 +35,41 @@ exports['try setting data'] = function(beforeExit) {
     assert.equal(image.data, undefined);
 };
 
-exports['load image from file'] = function(beforeExit) {
-    img.fromFile('test/fixture/1.png', function(err, image1) {
-        if (err) throw err;
-        img.fromFile('test/fixture/2.png', function(err, image2) {
-            if (err) throw err;
-            image1.overlay(image2, function(err) {
-                image1.asPNG({}, function(err, data) {
-                    if (err) throw err;
-                    fs.writeFileSync('out.png', data);
-                })
-            });
+exports['test delayed overlay loading'] = function(beforeExit) {
+    var completed = false;
+    var image2 = new img.Image();
+    setTimeout(function() {
+        image2.load(fs.readFileSync('test/fixture/2.png'));
+    }, 100);
+
+    var image3 = img.fromBuffer(fs.readFileSync('test/fixture/3.png'));
+
+    img.fromBuffer(fs.readFileSync('test/fixture/1.png'))
+        .overlay(image2)
+        .overlay(image3)
+        .asPNG({}, function(err, data) {
+            completed = true;
+            assert.ok(data.length >= 100000);
         });
+
+    beforeExit(function() {
+        assert.ok(completed);
+    });
+};
+
+exports['test delayed asPNG'] = function(beforeExit) {
+    var completed = false;
+    var image = new img.Image();
+    image.load(fs.readFileSync('test/fixture/4.png'));
+    image.asPNG({}, function(err, data) {
+        completed = true;
+        assert.equal(data[0], 0x89);
+        assert.equal(data[1], 0x50);
+        assert.equal(data[2], 0x4E);
+        assert.ok(data.length > 4000 && data.length < 5000);
+    });
+
+    beforeExit(function() {
+        assert.ok(completed);
     });
 };

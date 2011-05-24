@@ -13,7 +13,7 @@
 using namespace v8;
 using namespace node;
 
-class Image : public ObjectWrap {
+class Image : public EventEmitter {
     class Baton {
     public:
         Image* image;
@@ -26,6 +26,9 @@ class Image : public ObjectWrap {
             image->Ref();
             callback = Persistent<Function>::New(cb);
         }
+        virtual bool precondition(Baton* baton) {
+            return baton->image->data != NULL;
+        }
         ~Baton() {
             ev_unref(EV_DEFAULT_UC);
             image->Unref();
@@ -33,38 +36,44 @@ class Image : public ObjectWrap {
         }
     };
 
-    class BufferBaton : public Baton {
+    class LoadBaton : public Baton {
     public:
         Persistent<Object> buffer;
         size_t length;
         char* data;
         int pos;
 
-        BufferBaton(Image* img, Handle<Function> cb, Handle<Object> buf) : Baton(img, cb), pos(0) {
+        LoadBaton(Image* img, Handle<Function> cb, Handle<Object> buf) : Baton(img, cb), pos(0) {
             buffer = Persistent<Object>::New(buf);
             data = Buffer::Data(buf);
             length = Buffer::Length(buf);
         }
-        ~BufferBaton() {
+        virtual bool precondition(Baton* baton) {
+            return true;
+        }
+        ~LoadBaton() {
             buffer.Dispose();
         }
     };
 
-    class PNGBaton : public Baton {
+    class AsPNGBaton : public Baton {
     public:
         size_t length;
         char* data;
 
-        PNGBaton(Image* img, Handle<Function> cb) : Baton(img, cb), length(0), data(NULL) {}
+        AsPNGBaton(Image* img, Handle<Function> cb) : Baton(img, cb), length(0), data(NULL) {}
     };
 
-    class ImageBaton: public Baton {
+    class OverlayBaton: public Baton {
     public:
         Image* overlay;
-        ImageBaton(Image* img, Handle<Function> cb, Image* ovl) : Baton(img, cb), overlay(ovl) {
+        OverlayBaton(Image* img, Handle<Function> cb, Image* ovl) : Baton(img, cb), overlay(ovl) {
             overlay->Ref();
         }
-        ~ImageBaton() {
+        virtual bool precondition(Baton* baton) {
+            return ((OverlayBaton*)baton)->overlay->data != NULL;
+        }
+        ~OverlayBaton() {
             overlay->Unref();
         }
     };
@@ -72,7 +81,8 @@ class Image : public ObjectWrap {
     typedef void (*EIO_Callback)(Baton* baton);
 
     struct Call {
-        Call(EIO_Callback cb_, Baton* baton_) : callback(cb_), baton(baton_) {};
+        Call(EIO_Callback cb_, Baton* baton_)
+            : callback(cb_), baton(baton_) {};
         EIO_Callback callback;
         Baton* baton;
     };
@@ -83,8 +93,7 @@ public:
     static void Init(Handle<Object> target);
 
 protected:
-    Image() :
-        ObjectWrap(),
+    Image() : EventEmitter(),
         locked(false),
         width(0),
         height(0),
@@ -108,6 +117,8 @@ protected:
 
     void Schedule(EIO_Callback callback, Baton* baton);
     void Process();
+
+    static Handle<Value> Process(const Arguments& args);
 
     static Handle<Value> Load(const Arguments& args);
     static void EIO_BeginLoad(Baton* baton);

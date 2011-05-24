@@ -19,6 +19,7 @@ void Image::Init(Handle<Object> target) {
     constructor_template->SetClassName(String::NewSymbol("Image"));
 
     NODE_SET_PROTOTYPE_METHOD(constructor_template, "load", Load);
+    NODE_SET_PROTOTYPE_METHOD(constructor_template, "process", Process);
     NODE_SET_PROTOTYPE_METHOD(constructor_template, "overlay", Overlay);
     NODE_SET_PROTOTYPE_METHOD(constructor_template, "asPNG", AsPNG);
 
@@ -45,10 +46,21 @@ void Image::Schedule(EIO_Callback callback, Baton* baton) {
 void Image::Process() {
     while (!locked && !queue.empty()) {
         Call* call = queue.front();
-        queue.pop();
-        call->callback(call->baton);
-        delete call;
+        if (call->baton->precondition(call->baton)) {
+            queue.pop();
+            call->callback(call->baton);
+            delete call;
+        } else {
+            break;
+        }
     }
+}
+
+Handle<Value> Image::Process(const Arguments& args) {
+    HandleScope scope;
+    Image* image = ObjectWrap::Unwrap<Image>(args.This());
+    image->Process();
+    return args.This();
 }
 
 Handle<Value> Image::GetWidth(Local<String> name, const AccessorInfo& info) {
@@ -88,7 +100,7 @@ Handle<Value> Image::Load(const Arguments& args) {
             String::New("Buffer required as first argument")));
     }
 
-    Baton* baton = new BufferBaton(image, callback, args[0]->ToObject());
+    Baton* baton = new LoadBaton(image, callback, args[0]->ToObject());
     image->Schedule(EIO_BeginLoad, baton);
 
     return args.This();
@@ -100,7 +112,7 @@ void Image::EIO_BeginLoad(Baton* baton) {
 }
 
 void Image::readPNG(png_structp png_ptr, png_bytep data, png_size_t length) {
-    BufferBaton* baton = static_cast<BufferBaton*>(png_get_io_ptr(png_ptr));
+    LoadBaton* baton = static_cast<LoadBaton*>(png_get_io_ptr(png_ptr));
 
     // Read `length` bytes into `data`.
     if (baton->pos + length > baton->length) {
@@ -113,7 +125,7 @@ void Image::readPNG(png_structp png_ptr, png_bytep data, png_size_t length) {
 }
 
 int Image::EIO_Load(eio_req *req) {
-    BufferBaton* baton = static_cast<BufferBaton*>(req->data);
+    LoadBaton* baton = static_cast<LoadBaton*>(req->data);
     Image* image = baton->image;
 
     assert(image->data == NULL);
@@ -199,7 +211,7 @@ int Image::EIO_Load(eio_req *req) {
 
 int Image::EIO_AfterLoad(eio_req *req) {
     HandleScope scope;
-    BufferBaton* baton = static_cast<BufferBaton*>(req->data);
+    LoadBaton* baton = static_cast<LoadBaton*>(req->data);
     Image* image = baton->image;
 
     if (!baton->callback.IsEmpty() && baton->callback->IsFunction()) {
@@ -209,6 +221,12 @@ int Image::EIO_AfterLoad(eio_req *req) {
         };
         TRY_CATCH_CALL(image->handle_, baton->callback, 2, argv);
     }
+
+    Local<Value> args[] = {
+        String::NewSymbol("load"),
+        Local<Value>::New(image->handle_)
+    };
+    EMIT_EVENT(image->handle_, 2, args);
 
     delete baton;
     image->locked = false;
@@ -226,7 +244,7 @@ Handle<Value> Image::AsPNG(const Arguments& args) {
     // First argument is a hash with config options depth/color
     OPTIONAL_ARGUMENT_FUNCTION(1, callback);
 
-    Baton* baton = new PNGBaton(image, callback);
+    Baton* baton = new AsPNGBaton(image, callback);
     image->Schedule(EIO_BeginAsPNG, baton);
 
     return args.This();
@@ -238,7 +256,7 @@ void Image::EIO_BeginAsPNG(Baton* baton) {
 }
 
 void Image::writePNG(png_structp png_ptr, png_bytep data, png_size_t length) {
-    PNGBaton* baton = static_cast<PNGBaton*>(png_get_io_ptr(png_ptr));
+    AsPNGBaton* baton = static_cast<AsPNGBaton*>(png_get_io_ptr(png_ptr));
 
     // TODO: Reduce number of reallocs.
     baton->data = (char*)realloc(baton->data, baton->length + length);
@@ -250,7 +268,7 @@ void Image::writePNG(png_structp png_ptr, png_bytep data, png_size_t length) {
 }
 
 int Image::EIO_AsPNG(eio_req *req) {
-    PNGBaton* baton = static_cast<PNGBaton*>(req->data);
+    AsPNGBaton* baton = static_cast<AsPNGBaton*>(req->data);
     Image* image = baton->image;
 
     assert(image->data != NULL);
@@ -292,7 +310,7 @@ int Image::EIO_AsPNG(eio_req *req) {
 
 int Image::EIO_AfterAsPNG(eio_req *req) {
     HandleScope scope;
-    PNGBaton* baton = static_cast<PNGBaton*>(req->data);
+    AsPNGBaton* baton = static_cast<AsPNGBaton*>(req->data);
     Image* image = baton->image;
 
     if (!baton->callback.IsEmpty() && baton->callback->IsFunction()) {
@@ -329,7 +347,7 @@ Handle<Value> Image::Overlay(const Arguments& args) {
     }
 
     Image* overlay = ObjectWrap::Unwrap<Image>(args[0]->ToObject());
-    Baton* baton = new ImageBaton(image, callback, overlay);
+    Baton* baton = new OverlayBaton(image, callback, overlay);
     image->Schedule(EIO_BeginOverlay, baton);
 
     return args.This();
@@ -341,7 +359,7 @@ void Image::EIO_BeginOverlay(Baton* baton) {
 }
 
 int Image::EIO_Overlay(eio_req *req) {
-    ImageBaton* baton = static_cast<ImageBaton*>(req->data);
+    OverlayBaton* baton = static_cast<OverlayBaton*>(req->data);
     Image* image = baton->image;
 
     assert(image->data != NULL);
@@ -391,7 +409,7 @@ int Image::EIO_Overlay(eio_req *req) {
 
 int Image::EIO_AfterOverlay(eio_req *req) {
     HandleScope scope;
-    ImageBaton* baton = static_cast<ImageBaton*>(req->data);
+    OverlayBaton* baton = static_cast<OverlayBaton*>(req->data);
     Image* image = baton->image;
 
     if (!baton->callback.IsEmpty() && baton->callback->IsFunction()) {
