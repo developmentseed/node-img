@@ -14,7 +14,7 @@
     "licenses": [{ "type": "BSD" }],
     "main": "./lib",
     "devDependencies": {
-        "express": "0.7.x"
+        "expresso": "0.7.x"
     },
     "scripts": {
         "test": "expresso"
