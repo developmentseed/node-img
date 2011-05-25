@@ -258,8 +258,12 @@ void Image::EIO_BeginAsPNG(Baton* baton) {
 void Image::writePNG(png_structp png_ptr, png_bytep data, png_size_t length) {
     AsPNGBaton* baton = static_cast<AsPNGBaton*>(png_get_io_ptr(png_ptr));
 
-    // TODO: Reduce number of reallocs.
-    baton->data = (char*)realloc(baton->data, baton->length + length);
+    if (baton->data == NULL || baton->max < baton->length + length) {
+        int increase = baton->length ? 4 * length : 32768;
+        baton->data = (char*)realloc(baton->data, baton->max + increase);
+        baton->max += increase;
+    }
+
     // TODO: implement OOM check
     assert(baton->data);
 

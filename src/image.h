@@ -59,9 +59,15 @@ class Image : public EventEmitter {
     class AsPNGBaton : public Baton {
     public:
         size_t length;
+        size_t max;
         char* data;
 
-        AsPNGBaton(Image* img, Handle<Function> cb) : Baton(img, cb), length(0), data(NULL) {}
+        AsPNGBaton(Image* img, Handle<Function> cb) : Baton(img, cb), length(0), max(0), data(NULL) {}
+        ~AsPNGBaton() {
+            if (data != NULL) {
+                free(data);
+            }
+        }
     };
 
     class OverlayBaton: public Baton {
