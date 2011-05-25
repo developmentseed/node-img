@@ -291,12 +291,17 @@ int Image::EIO_AsPNG(eio_req *req) {
     //     return 0;
     // }
 
+    png_set_compression_level(png_ptr, Z_BEST_SPEED);
+
     png_set_IHDR(png_ptr, info_ptr, image->width, image->height, 8,
                  PNG_COLOR_TYPE_RGB_ALPHA, PNG_INTERLACE_NONE,
                  PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
 
     png_set_write_fn(png_ptr, (png_voidp)baton, writePNG, NULL);
     png_write_info(png_ptr, info_ptr);
+
+    // Enable this when setting PNG_COLOR_TYPE_RGB instead of PNG_COLOR_TYPE_RGB_ALPHA.
+    // png_set_filler(png_ptr, 0, PNG_FILLER_AFTER);
 
     png_bytep row_pointers[image->height];
     for (unsigned i = 0; i < image->height; i++) {
