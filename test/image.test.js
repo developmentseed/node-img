@@ -20,7 +20,7 @@ exports['create empty image'] = function(beforeExit) {
         image.asPNG({}, function(err, data) {
             completed = true;
             if (err) throw err;
-            assert.equal(data.length, 9560);
+            assert.ok(data.length > 9000 && data.length < 12000);
         });
     });
 
@@ -64,7 +64,7 @@ exports['test delayed asPNG'] = function(beforeExit) {
         assert.equal(data[0], 0x89);
         assert.equal(data[1], 0x50);
         assert.equal(data[2], 0x4E);
-        assert.ok(data.length > 4000 && data.length < 5000);
+        assert.ok(data.length > 4000 && data.length < 7000);
     });
 
     beforeExit(function() {
