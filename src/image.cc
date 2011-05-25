@@ -3,9 +3,6 @@
 #include <node.h>
 #include <node_events.h>
 
-#include <cstdlib>
-#include <cstring>
-
 #include "image.h"
 #include "macros.h"
 

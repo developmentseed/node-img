@@ -7,6 +7,9 @@
 #include <node_buffer.h>
 #include <png.h>
 
+#include <cstdlib>
+#include <cstring>
+
 #include <string>
 #include <queue>
 
