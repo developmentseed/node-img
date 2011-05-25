@@ -292,6 +292,7 @@ int Image::EIO_AsPNG(eio_req *req) {
     // }
 
     png_set_compression_level(png_ptr, Z_BEST_SPEED);
+    png_set_compression_buffer_size(png_ptr, 32768);
 
     png_set_IHDR(png_ptr, info_ptr, image->width, image->height, 8,
                  PNG_COLOR_TYPE_RGB_ALPHA, PNG_INTERLACE_NONE,
