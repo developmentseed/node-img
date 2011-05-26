@@ -188,61 +188,107 @@ void blend(unsigned char* dst_img, const unsigned char* src_img,
 int EIO_Blend(eio_req *req) {
     BlendBaton* baton = static_cast<BlendBaton*>(req->data);
 
-    PNGBuffer top = baton->buffers.back();
-    ImageReader* base = ImageReader::create(top.first, top.second);
+    unsigned int total = baton->buffers.size();
+    unsigned int size = 0;
+    unsigned int* images[total];
+    memset(images, NULL, total);
 
-    if (!base->alpha) {
-        // Exit early when the topmost image isn't transparent.
-        baton->result = top.first;
-        baton->length = top.second;
-        delete base;
-        return 0;
-    }
-
-    unsigned char* result = (unsigned char*)malloc(base->width * base->height * 4);
-    base->decode(result, true);
-
+    unsigned long width;
+    unsigned long height;
     bool alpha = true;
 
-    // Iterate from the second to last to first image.
+    // Iterate from the last to first image.
     PNGBuffers::reverse_iterator image = baton->buffers.rbegin();
     PNGBuffers::reverse_iterator end = baton->buffers.rend();
-    for (image++; image < end && alpha && !baton->error; image++) {
+    for (; image < end; image++) {
         ImageReader* layer = ImageReader::create((*image).first, (*image).second);
 
-        if (layer->width != base->width || layer->height != base->height) {
-            baton->error = true;
-        } else {
-            // alpha = layer->alpha;
-
-            size_t size = base->width * base->height * (alpha ? 4 : 3);
-            unsigned char* surface = (unsigned char*)malloc(size);
-            layer->decode(surface, alpha);
-
-            if (alpha) {
-                blendAlpha(surface, result, base->width, base->height);
-            } else {
-                blend(surface, result, base->width, base->height);
+        if (size == 0) {
+            width = layer->width;
+            height = layer->height;
+            if (!layer->alpha) {
+                baton->result = (*image).first;
+                baton->length = (*image).second;
+                delete layer;
+                break;
             }
+        } else if (layer->width != width || layer->height != height) {
+            baton->error = true;
+            delete layer;
+            break;
+        }
 
-            free(result);
-            result = surface;
-            surface = NULL;
+        images[size] = (unsigned int*)malloc(width * height * 4);
+        layer->decode((unsigned char*)images[size], true);
+        size++;
+
+        if (!layer->alpha) {
+            // Skip decoding more layers.
+            alpha = false;
+            delete layer;
+            break;
         }
 
         delete layer;
     }
 
-    if (result) {
-        if (!baton->error) {
-            Blend_Encode(result, baton, base->width, base->height, alpha);
+    if (!baton->error && size) {
+        size_t length = width * height;
+        for (long px = length - 1; px >= 0; px--) {
+            // Starting pixel
+            unsigned int abgr = images[0][px];
+
+            // Skip if topmost pixel is opaque.
+            if (abgr >= 0xFF000000) continue;
+
+            for (int i = 1; i < size; i++) {
+                if (images[i][px] <= 0x00FFFFFF) {
+                    // Lower pixel is fully transparent.
+                    continue;
+                } else if (abgr <= 0x00FFFFFF) {
+                    // Upper pixel is fully transparent.
+                    abgr = images[i][px];
+                } else {
+                    // Both pixels have transparency.
+                    unsigned int rgba0 = images[i][px];
+                    unsigned int rgba1 = abgr;
+
+                    // From http://trac.mapnik.org/browser/trunk/include/mapnik/graphics.hpp#L337
+                    unsigned a1 = (rgba1 >> 24) & 0xff;
+                    unsigned r1 = rgba1 & 0xff;
+                    unsigned g1 = (rgba1 >> 8 ) & 0xff;
+                    unsigned b1 = (rgba1 >> 16) & 0xff;
+
+                    unsigned a0 = (rgba0 >> 24) & 0xff;
+                    unsigned r0 = (rgba0 & 0xff) * a0;
+                    unsigned g0 = ((rgba0 >> 8 ) & 0xff) * a0;
+                    unsigned b0 = ((rgba0 >> 16) & 0xff) * a0;
+
+                    a0 = ((a1 + a0) << 8) - a0*a1;
+
+                    r0 = ((((r1 << 8) - r0) * a1 + (r0 << 8)) / a0);
+                    g0 = ((((g1 << 8) - g0) * a1 + (g0 << 8)) / a0);
+                    b0 = ((((b1 << 8) - b0) * a1 + (b0 << 8)) / a0);
+                    a0 = a0 >> 8;
+                    abgr = (a0 << 24)| (b0 << 16) | (g0 << 8) | (r0);
+                }
+                if (abgr >= 0xFF000000) break;
+            }
+
+            // Merge pixel back.
+            images[0][px] = abgr;
         }
 
-        free(result);
-        result = NULL;
+        Blend_Encode((unsigned char*)images[0], baton, width, height, alpha);
     }
 
-    delete base;
+    for (int i = 0; i < total; i++) {
+        if (images[i] != NULL) {
+            free(images[i]);
+            images[i] = NULL;
+        }
+    }
+
     return 0;
 }
 
