@@ -11,11 +11,12 @@ def set_options(opt):
 def configure(conf):
   conf.check_tool("compiler_cxx")
   conf.check_tool("node_addon")
-  conf.check(lib='png', libpath=['/usr/local/lib', '/opt/local/lib'], mandatory=True)
+  conf.check(lib='png', libpath=['/usr/local/lib', '/usr/X11/lib', '/opt/local/lib'], mandatory=True)
 
 def build(bld):
   obj = bld.new_task_gen("cxx", "shlib", "node_addon")
   obj.cxxflags = ["-O2", "-D_FILE_OFFSET_BITS=64", "-D_LARGEFILE_SOURCE", "-Wall"]
+  obj.cxxflags.append('-I/usr/X11/include')
   obj.target = TARGET
   obj.source = ["src/img.cc", "src/reader.cc", "src/blend.cc", "src/image.cc"]
   obj.uselib = "PNG"

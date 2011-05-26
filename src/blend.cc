@@ -140,52 +140,109 @@ void Blend_Encode(unsigned const char* source, BlendBaton* baton,
 }
 
 
+void blendAlpha(unsigned char* dst_img, const unsigned char* src_img,
+                unsigned long width, unsigned long height) {
+    // both dst and src are RGBA
+    for (unsigned long y = 0; y < height; y++) {
+        int offset = 4 * y * width;
+        const unsigned int* src = (const unsigned int*)(src_img + offset);
+        unsigned int* dst = (unsigned int*)(dst_img + offset);
+
+        for (unsigned long x = 0; x < width; x++) {
+             unsigned int rgba0 = dst[x];
+             unsigned int rgba1 = src[x];
+
+             // From http://trac.mapnik.org/browser/trunk/include/mapnik/graphics.hpp#L337
+             unsigned a1 = (rgba1 >> 24) & 0xff;
+             if (a1 == 0) continue;
+             if (a1 == 0xff) {
+                 dst[x] = rgba1;
+                 continue;
+             }
+             unsigned r1 = rgba1 & 0xff;
+             unsigned g1 = (rgba1 >> 8 ) & 0xff;
+             unsigned b1 = (rgba1 >> 16) & 0xff;
+
+             unsigned a0 = (rgba0 >> 24) & 0xff;
+             unsigned r0 = (rgba0 & 0xff) * a0;
+             unsigned g0 = ((rgba0 >> 8 ) & 0xff) * a0;
+             unsigned b0 = ((rgba0 >> 16) & 0xff) * a0;
+
+             a0 = ((a1 + a0) << 8) - a0*a1;
+
+             r0 = ((((r1 << 8) - r0) * a1 + (r0 << 8)) / a0);
+             g0 = ((((g1 << 8) - g0) * a1 + (g0 << 8)) / a0);
+             b0 = ((((b1 << 8) - b0) * a1 + (b0 << 8)) / a0);
+             a0 = a0 >> 8;
+             dst[x] = (a0 << 24)| (b0 << 16) | (g0 << 8) | (r0);
+        }
+    }
+}
+
+void blend(unsigned char* dst_img, const unsigned char* src_img,
+                unsigned long width, unsigned long height) {
+    // dst is RGB, src is RGBA
+
+}
+
 int EIO_Blend(eio_req *req) {
     BlendBaton* baton = static_cast<BlendBaton*>(req->data);
 
-    // EncodeBaton* encode = new EncodeBaton();
-    unsigned long width;
-    unsigned long height;
-    bool alpha;
-    unsigned char* result = NULL;
-    
     PNGBuffer top = baton->buffers.back();
-    ImageReader* reader = ImageReader::create(top.first, top.second);
-    
-    // // Iterate from last to first image.
-    // PNGBuffers::reverse_iterator begin = baton->buffers.rbegin();
-    // PNGBuffers::reverse_iterator end = baton->buffers.rend();
-    // for (PNGBuffers::reverse_iterator image = begin; image < end && alpha; image++) {
-    //     // current item: (*image)
-    //     // read image header
-    //     if (image == begin) {
-    //     //     if (image has no alpha) {
-    //             baton->result = (*image).first;
-    //             baton->length = (*image).second;
-    //             break;
-    //     //     }
-    //     //     decode image with alpha
-    //     //     set result to decoded image
-    //     } else {
-    //     //     if (dimensions dont match) {
-    //     //         baton->error = true;
-    //     //         free(result);
-    //     //         result = NULL;
-    //     //         break;
-    //     //     }
-    //     //     alpha = image has alpha;
-    //     //
-    //     //     decode image with alpha
-    //     //     blend result onto decoded image
-    //     //     free(result)
-    //     //     result = decoded image;
-    //     }
-    // }
-    // 
-    // if (result) {
-    //     Blend_Encode(result, baton, width, height, alpha);
-    // }
+    ImageReader* base = ImageReader::create(top.first, top.second);
 
+    if (!base->alpha) {
+        // Exit early when the topmost image isn't transparent.
+        baton->result = top.first;
+        baton->length = top.second;
+        delete base;
+        return 0;
+    }
+
+    unsigned char* result = (unsigned char*)malloc(base->width * base->height * 4);
+    base->decode(result, true);
+
+    bool alpha = true;
+
+    // Iterate from the second to last to first image.
+    PNGBuffers::reverse_iterator image = baton->buffers.rbegin();
+    PNGBuffers::reverse_iterator end = baton->buffers.rend();
+    for (image++; image < end && alpha && !baton->error; image++) {
+        ImageReader* layer = ImageReader::create((*image).first, (*image).second);
+
+        if (layer->width != base->width || layer->height != base->height) {
+            baton->error = true;
+        } else {
+            // alpha = layer->alpha;
+
+            size_t size = base->width * base->height * (alpha ? 4 : 3);
+            unsigned char* surface = (unsigned char*)malloc(size);
+            layer->decode(surface, alpha);
+
+            if (alpha) {
+                blendAlpha(surface, result, base->width, base->height);
+            } else {
+                blend(surface, result, base->width, base->height);
+            }
+
+            free(result);
+            result = surface;
+            surface = NULL;
+        }
+
+        delete layer;
+    }
+
+    if (result) {
+        if (!baton->error) {
+            Blend_Encode(result, baton, base->width, base->height, alpha);
+        }
+
+        free(result);
+        result = NULL;
+    }
+
+    delete base;
     return 0;
 }
 

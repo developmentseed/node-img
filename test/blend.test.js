@@ -30,13 +30,25 @@ exports['test bogus elements in array'] = function() {
     }, /All elements must be Buffers/);
 };
 
+exports['test blend function with topmost image having no alpha'] = function(beforeExit) {
+    var completed = false;
+    img.blend([ images[1], images[0] ], function(err, data) {
+        completed = true;
+        if (err) throw err;
+        assert.deepEqual(images[0], data);
+    });
+
+    beforeExit(function() { assert.ok(completed); });
+};
+
 exports['test blend function'] = function(beforeExit) {
     var completed = false;
 
     img.blend(images, function(err, data) {
         completed = true;
         if (err) throw err;
-        // fs.writeFileSync('out.png', data);
+        // assert.notDeepEqual(images[4], data);
+        fs.writeFileSync('out.png', data);
     });
 
     beforeExit(function() {
