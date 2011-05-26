@@ -11,7 +11,7 @@ public:
     inline unsigned long getWidth() { return width; }
     inline unsigned long getheight() { return height; }
     inline bool getAlpha() { return alpha; }
-    virtual void decode(char* surface, bool alpha = true);
+    virtual void decode(char* surface, bool alpha = true) = 0;
     ImageReader() : source(NULL), length(0), pos(0), width(0), height(0),
                depth(0), color(-1), alpha(false) {}
 
