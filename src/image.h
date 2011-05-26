@@ -1,5 +1,5 @@
-#ifndef NODE_IMAGEBLEND_SRC_IMAGE_H
-#define NODE_IMAGEBLEND_SRC_IMAGE_H
+#ifndef NODE_IMG_SRC_IMAGE_H
+#define NODE_IMG_SRC_IMAGE_H
 
 #include <v8.h>
 #include <node.h>

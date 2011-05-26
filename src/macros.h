@@ -1,5 +1,5 @@
-#ifndef NODE_IMAGEBLEND_SRC_MACROS_H
-#define NODE_IMAGEBLEND_SRC_MACROS_H
+#ifndef NODE_IMG_SRC_MACROS_H
+#define NODE_IMG_SRC_MACROS_H
 
 #define REQUIRE_ARGUMENTS(n)                                                   \
     if (args.Length() < (n)) {                                                 \
@@ -97,4 +97,3 @@
     static int EIO_After##name(eio_req *req);
 
 #endif
-

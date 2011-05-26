@@ -15,9 +15,9 @@ def configure(conf):
 
 def build(bld):
   obj = bld.new_task_gen("cxx", "shlib", "node_addon")
-  obj.cxxflags = ["-O3", "-D_FILE_OFFSET_BITS=64", "-D_LARGEFILE_SOURCE", "-Wall"]
+  obj.cxxflags = ["-O2", "-D_FILE_OFFSET_BITS=64", "-D_LARGEFILE_SOURCE", "-Wall"]
   obj.target = TARGET
-  obj.source = "src/img.cc src/image.cc"
+  obj.source = ["src/img.cc", "src/reader.cc", "src/blend.cc", "src/image.cc"]
   obj.uselib = "PNG"
 
 def shutdown():
