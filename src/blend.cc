@@ -139,11 +139,7 @@ void Blend_Encode(unsigned const char* source, BlendBaton* baton,
     png_destroy_write_struct(&png_ptr, &info_ptr);
 }
 
-inline void blendSSE(unsigned int* images[], unsigned int size, unsigned long width, unsigned long height) {
-
-}
-
-inline void blendTopDown(unsigned int* images[], unsigned int size, unsigned long width, unsigned long height) {
+inline void blendTopDown(unsigned int* images[], int size, unsigned long width, unsigned long height) {
     size_t length = width * height;
     for (long px = length - 1; px >= 0; px--) {
         // Starting pixel
@@ -194,13 +190,13 @@ inline void blendTopDown(unsigned int* images[], unsigned int size, unsigned lon
 int EIO_Blend(eio_req *req) {
     BlendBaton* baton = static_cast<BlendBaton*>(req->data);
 
-    unsigned int total = baton->buffers.size();
-    unsigned int size = 0;
+    int total = baton->buffers.size();
+    int size = 0;
     unsigned int* images[total];
     memset(images, NULL, total);
 
-    unsigned long width;
-    unsigned long height;
+    unsigned long width = 0;
+    unsigned long height = 0;
     bool alpha = true;
 
     // Iterate from the last to first image.
@@ -239,9 +235,7 @@ int EIO_Blend(eio_req *req) {
     }
 
     if (!baton->error && size) {
-        // blendTopDown(images, size, width, height);
         blendTopDown(images, size, width, height);
-
         Blend_Encode((unsigned char*)images[0], baton, width, height, alpha);
     }
 
