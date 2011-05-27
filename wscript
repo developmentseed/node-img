@@ -15,7 +15,7 @@ def configure(conf):
 
 def build(bld):
   obj = bld.new_task_gen("cxx", "shlib", "node_addon")
-  obj.cxxflags = ["-O2", "-D_FILE_OFFSET_BITS=64", "-D_LARGEFILE_SOURCE", "-Wall"]
+  obj.cxxflags = ["-O3", "-D_FILE_OFFSET_BITS=64", "-D_LARGEFILE_SOURCE", "-Wall", "-mfpmath=sse", "-march=core2"]
   obj.cxxflags.append('-I/usr/X11/include')
   obj.target = TARGET
   obj.source = ["src/img.cc", "src/reader.cc", "src/blend.cc", "src/image.cc"]
